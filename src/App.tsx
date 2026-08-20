@@ -49,6 +49,7 @@ function App() {
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+  const latestSegmentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!exportOpen) return;
@@ -62,6 +63,15 @@ function App() {
   }, [exportOpen]);
 
   const active = shapes.find((s) => s.id === activeId) ?? null;
+  const activeSegmentCount = active?.segments.length ?? 0;
+
+  useEffect(() => {
+    if (!activeId || activeSegmentCount === 0 || !expanded) return;
+    latestSegmentRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+    });
+  }, [activeId, activeSegmentCount, expanded]);
 
   const commit = useCallback((next: PathShape[]) => {
     setShapes(next);
@@ -646,6 +656,11 @@ function App() {
                         {active.segments.map((seg, i) => (
                           <div
                             key={i}
+                            ref={
+                              i === active.segments.length - 1
+                                ? latestSegmentRef
+                                : null
+                            }
                             className={`p-3 rounded-xl border ${
                               i === active.segments.length - 1
                                 ? 'bg-slate-800/60 border-pink-500/30'

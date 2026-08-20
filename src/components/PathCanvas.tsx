@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
+import { Minus, Move, Plus, RotateCcw } from 'lucide-react';
 import type { PathShape, Segment, Point } from '@/lib/path';
 import {
   buildD,
@@ -22,7 +23,16 @@ interface Props {
 type Drag =
   | { kind: 'endpoint'; index: number }
   | { kind: 'control'; segIndex: number; ctrlIndex: number }
+  | { kind: 'pan'; pointerId: number; startClient: Point; startPan: Point }
   | null;
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 8;
+const ZOOM_STEP = 1.25;
+const GRID_SIZE = 40;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 export function PathCanvas({
   shape,
@@ -36,6 +46,9 @@ export function PathCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag>(null);
   const [hover, setHover] = useState<Point | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [panMode, setPanMode] = useState(false);
 
   const toSvg = useCallback((e: { clientX: number; clientY: number }): Point => {
     const svg = svgRef.current!;
@@ -62,6 +75,19 @@ export function PathCanvas({
       if (segs.length > 0 && lastSeg && lastSeg.type !== 'Z') {
         setHover(toSvg(e));
       }
+      return;
+    }
+    if (drag.kind === 'pan') {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const dx = e.clientX - drag.startClient.x;
+      const dy = e.clientY - drag.startClient.y;
+      const nextPan = {
+        x: drag.startPan.x - dx * (zoomedW / rect.width),
+        y: drag.startPan.y - dy * (zoomedH / rect.height),
+      };
+      setPan(clampPan(nextPan, zoom));
       return;
     }
     const p = toSvg(e);
@@ -103,14 +129,19 @@ export function PathCanvas({
   };
 
   const endDrag = () => {
+    if (drag?.kind === 'pan') {
+      svgRef.current?.releasePointerCapture(drag.pointerId);
+    }
     if (drag) {
       setDrag(null);
-      onCommit();
+      if (drag.kind !== 'pan') {
+        onCommit();
+      }
     }
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (drag) return;
+    if (drag || panMode) return;
     const tag = (e.target as Element).tagName;
     if (e.target !== e.currentTarget && tag !== 'image' && tag !== 'rect') {
       return;
@@ -123,7 +154,7 @@ export function PathCanvas({
   const hasPath = segs.length > 0;
   const showActivePath = isShapeVisible && hasPath;
   const showPreview =
-    !drag && showActivePath && lastSeg && lastSeg.type !== 'Z' && hover;
+    !drag && !panMode && showActivePath && lastSeg && lastSeg.type !== 'Z' && hover;
   const inactiveShapes = shapes.filter(
     (s) => s.visible && s.id !== shape.id && s.segments.length > 0
   );
@@ -131,16 +162,120 @@ export function PathCanvas({
   const vbW = canvasDims.w;
   const vbH = canvasDims.h;
   const aspect = vbW / vbH;
+  const zoomedW = vbW / zoom;
+  const zoomedH = vbH / zoom;
+  const maxPanX = Math.max(0, (vbW - zoomedW) / 2);
+  const maxPanY = Math.max(0, (vbH - zoomedH) / 2);
+  const boundedPan = {
+    x: clamp(pan.x, -maxPanX, maxPanX),
+    y: clamp(pan.y, -maxPanY, maxPanY),
+  };
+  const viewX = (vbW - zoomedW) / 2 + boundedPan.x;
+  const viewY = (vbH - zoomedH) / 2 + boundedPan.y;
+  const gridBleed = GRID_SIZE;
+
+  const clampPan = (nextPan: Point, nextZoom: number) => {
+    const nextZoomedW = vbW / nextZoom;
+    const nextZoomedH = vbH / nextZoom;
+    const nextMaxPanX = Math.max(0, (vbW - nextZoomedW) / 2);
+    const nextMaxPanY = Math.max(0, (vbH - nextZoomedH) / 2);
+    return {
+      x: clamp(nextPan.x, -nextMaxPanX, nextMaxPanX),
+      y: clamp(nextPan.y, -nextMaxPanY, nextMaxPanY),
+    };
+  };
+
+  const setNextZoom = (next: number) => {
+    const nextZoom = clamp(next, MIN_ZOOM, MAX_ZOOM);
+    setZoom(nextZoom);
+    setPan((currentPan) => clampPan(currentPan, nextZoom));
+    if (nextZoom === 1) {
+      setPanMode(false);
+    }
+  };
+
+  const zoomOut = () => setNextZoom(zoom / ZOOM_STEP);
+  const zoomIn = () => setNextZoom(zoom * ZOOM_STEP);
+  const resetZoom = () => setNextZoom(1);
+  const zoomLabel = `${Math.round(zoom * 100)}%`;
+  const canPan = zoom > 1;
+
+  const startPan = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!panMode || !canPan || e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({
+      kind: 'pan',
+      pointerId: e.pointerId,
+      startClient: { x: e.clientX, y: e.clientY },
+      startPan: boundedPan,
+    });
+  };
 
   return (
     <div className="relative w-full h-full flex items-center justify-center p-4">
-      <div className="relative max-w-full max-h-full" style={{ aspectRatio: aspect }}>
+      <div
+        className="relative max-w-full max-h-full"
+        style={{
+          aspectRatio: aspect,
+          width: `min(100%, calc((100vh - 5.5rem) * ${aspect}))`,
+        }}
+      >
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-950/85 p-1 shadow-xl backdrop-blur">
+          <button
+            type="button"
+            onClick={zoomOut}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={zoom <= MIN_ZOOM}
+            title="Zoom out"
+          >
+            <Minus size={16} />
+          </button>
+          <div className="w-14 text-center font-mono text-xs text-slate-300">
+            {zoomLabel}
+          </div>
+          <button
+            type="button"
+            onClick={zoomIn}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={zoom >= MAX_ZOOM}
+            title="Zoom in"
+          >
+            <Plus size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={zoom === 1}
+            title="Reset zoom"
+          >
+            <RotateCcw size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanMode((enabled) => !enabled)}
+            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              panMode
+                ? 'bg-blue-500 text-white hover:bg-blue-400'
+                : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+            }`}
+            disabled={!canPan}
+            title="Move zoomed view"
+          >
+            <Move size={15} />
+          </button>
+        </div>
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${vbW} ${vbH}`}
+          viewBox={`${viewX} ${viewY} ${zoomedW} ${zoomedH}`}
           className="w-full h-full max-h-[80vh] max-w-full rounded-xl shadow-2xl block bg-slate-900"
-          style={{ touchAction: 'none' }}
+          style={{
+            touchAction: 'none',
+            cursor: panMode && canPan ? (drag?.kind === 'pan' ? 'grabbing' : 'grab') : undefined,
+          }}
           onPointerMove={onPointerMove}
+          onPointerDown={startPan}
           onPointerUp={endDrag}
           onPointerLeave={() => {
             setHover(null);
@@ -163,20 +298,26 @@ export function PathCanvas({
               <defs>
                 <pattern
                   id="canvas-grid"
-                  width="40"
-                  height="40"
+                  width={GRID_SIZE}
+                  height={GRID_SIZE}
                   patternUnits="userSpaceOnUse"
                 >
-                  <rect width="40" height="40" fill="#1e293b" />
-                  <rect width="20" height="20" fill="#243246" />
-                  <rect x="20" y="20" width="20" height="20" fill="#243246" />
+                  <rect width={GRID_SIZE} height={GRID_SIZE} fill="#1e293b" />
+                  <rect width={GRID_SIZE / 2} height={GRID_SIZE / 2} fill="#243246" />
+                  <rect
+                    x={GRID_SIZE / 2}
+                    y={GRID_SIZE / 2}
+                    width={GRID_SIZE / 2}
+                    height={GRID_SIZE / 2}
+                    fill="#243246"
+                  />
                 </pattern>
               </defs>
               <rect
-                x={0}
-                y={0}
-                width={vbW}
-                height={vbH}
+                x={viewX - gridBleed}
+                y={viewY - gridBleed}
+                width={zoomedW + gridBleed * 2}
+                height={zoomedH + gridBleed * 2}
                 fill="url(#canvas-grid)"
                 style={{ cursor: 'crosshair' }}
               />
