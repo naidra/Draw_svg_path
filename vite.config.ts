@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url';
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: '/Draw_svg_path/',
   plugins: [react()],
   resolve: {
     alias: {
