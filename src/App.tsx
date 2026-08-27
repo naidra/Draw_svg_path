@@ -203,14 +203,14 @@ function App() {
       setExpanded(true);
       const withSeg: PathShape = {
         ...np,
-        segments: [moveToSegment(p), makeLineSegment(p, p)],
+        segments: [moveToSegment(p)],
       };
       commit(next.map((s) => (s.id === np.id ? withSeg : s)));
       return;
     }
     updateActive((s) => {
       if (s.segments.length === 0) {
-        return { ...s, segments: [moveToSegment(p), makeLineSegment(p, p)] };
+        return { ...s, segments: [moveToSegment(p)] };
       }
       const last = s.segments[s.segments.length - 1];
       if (last.type === 'Z') {
