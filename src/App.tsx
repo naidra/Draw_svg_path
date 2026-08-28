@@ -11,6 +11,7 @@ import {
   ChevronRight,
   MousePointerClick,
   Undo2,
+  RotateCw,
   Spline,
   ImageIcon,
   Maximize,
@@ -50,6 +51,7 @@ function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [pathDataInput, setPathDataInput] = useState('');
   const [pathDataError, setPathDataError] = useState<string | null>(null);
+  const [selectionRotationInput, setSelectionRotationInput] = useState('0');
   const [pendingRemove, setPendingRemove] = useState<
     { kind: 'segment'; index: number } | { kind: 'path'; id: string; name: string } | null
   >(null);
@@ -249,6 +251,42 @@ function App() {
     return segment;
   };
 
+  const selectedPointPosition = (
+    shape: PathShape,
+    point: SelectedPathPoint
+  ): Point | null => {
+    const segment = shape.segments[point.segmentIndex];
+    if (!segment || segment.type === 'Z') return null;
+    if (point.pointIndex === 0) return segmentEnd(segment, shape.segments);
+    if ((segment.type === 'C' || segment.type === 'Q') && point.pointIndex === 1) {
+      return { x: segment.x1, y: segment.y1 };
+    }
+    if (segment.type === 'C' && point.pointIndex === 2) {
+      return { x: segment.x2, y: segment.y2 };
+    }
+    return null;
+  };
+
+  const selectedPointsCenter = (): Point | null => {
+    const points = selectedPoints
+      .map((point) => {
+        const shape = shapes.find((s) => s.id === point.shapeId);
+        return shape ? selectedPointPosition(shape, point) : null;
+      })
+      .filter((point): point is Point => !!point);
+
+    if (points.length === 0) return null;
+
+    const minX = Math.min(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const maxY = Math.max(...points.map((point) => point.y));
+    return {
+      x: minX + (maxX - minX) / 2,
+      y: minY + (maxY - minY) / 2,
+    };
+  };
+
   const transformPoints = (
     points: SelectedPathPoint[],
     transform: (point: Point) => Point
@@ -293,6 +331,36 @@ function App() {
       x: center.x + (point.x - center.x) * factor,
       y: center.y + (point.y - center.y) * factor,
     }));
+  };
+
+  const rotatePoints = (
+    points: SelectedPathPoint[],
+    angle: number,
+    center: Point
+  ) => {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    transformPoints(points, (point) => {
+      const dx = point.x - center.x;
+      const dy = point.y - center.y;
+      return {
+        x: center.x + dx * cos - dy * sin,
+        y: center.y + dx * sin + dy * cos,
+      };
+    });
+  };
+
+  const rotateSelectedByDegrees = (degrees: number) => {
+    const center = selectedPointsCenter();
+    if (!center) return;
+    rotatePoints(selectedPoints, (degrees * Math.PI) / 180, center);
+  };
+
+  const applySelectionRotationInput = () => {
+    const degrees = parseFloat(selectionRotationInput);
+    if (!Number.isFinite(degrees)) return;
+    rotateSelectedByDegrees(degrees);
+    setSelectionRotationInput('0');
   };
 
   const movePoints = (points: SelectedPathPoint[], dx: number, dy: number) => {
@@ -376,6 +444,7 @@ function App() {
   const lastSeg = active?.segments[active.segments.length - 1] ?? null;
   const canUndo = !!active && active.segments.length > 0;
   const canCloseActivePath = !!lastSeg && lastSeg.type !== 'M' && lastSeg.type !== 'Z';
+  const canTransformSelection = selectedPoints.length > 0 && !!selectedPointsCenter();
 
   const closeActivePath = () => {
     if (!canCloseActivePath) return;
@@ -490,6 +559,7 @@ function App() {
             onAddSegment={addSegment}
             onSelectPoints={selectPoints}
             onScalePoints={scalePoints}
+            onRotatePoints={rotatePoints}
             onMovePoints={movePoints}
             onCommit={onCommit}
           />
@@ -682,6 +752,58 @@ function App() {
 
               {active && (
                 <>
+                  {/* Selection transform */}
+                  {selectedPoints.length > 0 && (
+                    <section className="space-y-3 pt-4 border-t border-slate-800">
+                      <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        <RotateCw size={13} />
+                        Selection
+                      </h2>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[-15, 15, 90].map((degrees) => (
+                          <button
+                            key={degrees}
+                            type="button"
+                            onClick={() => rotateSelectedByDegrees(degrees)}
+                            disabled={!canTransformSelection}
+                            className="flex items-center justify-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={`Rotate selected points ${degrees} degrees`}
+                          >
+                            <RotateCw size={13} />
+                            {degrees > 0 ? `+${degrees}` : degrees}°
+                          </button>
+                        ))}
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-slate-300">
+                        <span className="w-16 flex-shrink-0 text-slate-400">
+                          Rotate
+                        </span>
+                        <input
+                          type="number"
+                          step={1}
+                          value={selectionRotationInput}
+                          disabled={!canTransformSelection}
+                          onChange={(e) => setSelectionRotationInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            applySelectionRotationInput();
+                          }}
+                          className="w-full min-w-0 rounded bg-slate-800 px-2 py-1 font-mono text-slate-100 border border-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                        <span className="text-slate-500">°</span>
+                        <button
+                          type="button"
+                          onClick={applySelectionRotationInput}
+                          disabled={!canTransformSelection}
+                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-blue-500 text-white transition-colors hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Apply rotation"
+                        >
+                          <RotateCw size={13} />
+                        </button>
+                      </label>
+                    </section>
+                  )}
+
                   {/* Style */}
                   <section className="space-y-3 pt-4 border-t border-slate-800">
                     <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">

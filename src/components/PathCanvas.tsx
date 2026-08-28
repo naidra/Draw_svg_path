@@ -25,6 +25,7 @@ interface Props {
   onAddSegment: (p: Point) => void;
   onSelectPoints: (points: SelectedPathPoint[]) => void;
   onScalePoints: (points: SelectedPathPoint[], factor: number, center: Point) => void;
+  onRotatePoints: (points: SelectedPathPoint[], angle: number, center: Point) => void;
   onMovePoints: (points: SelectedPathPoint[], dx: number, dy: number) => void;
   onCommit: () => void;
 }
@@ -43,6 +44,13 @@ type Drag =
       cursor: ScaleCursor;
       points: SelectedPathPoint[];
     }
+  | {
+      kind: 'rotateSelection';
+      pointerId: number;
+      center: Point;
+      lastAngle: number;
+      points: SelectedPathPoint[];
+    }
   | null;
 
 const MIN_ZOOM = 0.25;
@@ -50,6 +58,8 @@ const MAX_ZOOM = 8;
 const ZOOM_STEP = 1.25;
 const GRID_SIZE = 40;
 const SCALE_HANDLE_SIZE = 8;
+const ROTATE_HANDLE_RADIUS = 7;
+const ROTATE_HANDLE_OFFSET = 34;
 const MIN_SCALE_DISTANCE = 4;
 
 const clamp = (value: number, min: number, max: number) =>
@@ -92,6 +102,8 @@ const boundsCenter = (bounds: Bounds): Point => ({
 });
 
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+const angleBetween = (a: Point, b: Point) => Math.atan2(a.y - b.y, a.x - b.x);
 
 type SelectablePoint = SelectedPathPoint & {
   x: number;
@@ -178,6 +190,7 @@ export function PathCanvas({
   onAddSegment,
   onSelectPoints,
   onScalePoints,
+  onRotatePoints,
   onMovePoints,
   onCommit,
 }: Props) {
@@ -250,6 +263,13 @@ export function PathCanvas({
       setDrag({ ...drag, lastDistance: nextDistance });
       return;
     }
+    if (drag.kind === 'rotateSelection') {
+      const p = toSvg(e);
+      const nextAngle = angleBetween(p, drag.center);
+      onRotatePoints(drag.points, nextAngle - drag.lastAngle, drag.center);
+      setDrag({ ...drag, lastAngle: nextAngle });
+      return;
+    }
     const p = toSvg(e);
     if (drag.kind === 'endpoint') {
       const seg = segs[drag.index];
@@ -292,7 +312,8 @@ export function PathCanvas({
       drag?.kind === 'pan' ||
       drag?.kind === 'marquee' ||
       drag?.kind === 'moveSelection' ||
-      drag?.kind === 'scaleSelection'
+      drag?.kind === 'scaleSelection' ||
+      drag?.kind === 'rotateSelection'
     ) {
       svgRef.current?.releasePointerCapture(drag.pointerId);
     }
@@ -310,7 +331,8 @@ export function PathCanvas({
         drag.kind !== 'pan' &&
         drag.kind !== 'marquee' &&
         drag.kind !== 'moveSelection' &&
-        drag.kind !== 'scaleSelection'
+        drag.kind !== 'scaleSelection' &&
+        drag.kind !== 'rotateSelection'
       ) {
         onCommit();
       }
@@ -391,6 +413,12 @@ export function PathCanvas({
         },
       ]
     : [];
+  const rotateHandle = selectedGroupBounds
+    ? {
+        x: selectedGroupBounds.x + selectedGroupBounds.w / 2,
+        y: selectedGroupBounds.y - ROTATE_HANDLE_OFFSET,
+      }
+    : null;
   const marqueeBounds =
     drag?.kind === 'marquee' ? normalizeBounds(drag.start, drag.current) : null;
 
@@ -438,6 +466,7 @@ export function PathCanvas({
     panMode && canPan ? (drag?.kind === 'pan' ? 'grabbing' : 'grab') : undefined;
   const isMovingSelection = drag?.kind === 'moveSelection';
   const isScalingSelection = drag?.kind === 'scaleSelection';
+  const isRotatingSelection = drag?.kind === 'rotateSelection';
   const interactionCursor =
     panCursor ??
     (selectMode
@@ -445,7 +474,9 @@ export function PathCanvas({
         ? 'grabbing'
         : isScalingSelection
           ? drag.cursor
-          : 'crosshair'
+          : isRotatingSelection
+            ? 'grabbing'
+            : 'crosshair'
       : undefined);
 
   const startPan = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -502,6 +533,22 @@ export function PathCanvas({
       center,
       lastDistance,
       cursor,
+      points: selectedPoints,
+    });
+  };
+
+  const startSelectionRotate = (e: React.PointerEvent<SVGElement>) => {
+    if (!selectMode || e.button !== 0 || !selectedGroupBounds) return;
+    const center = boundsCenter(selectedGroupBounds);
+    const start = toSvg(e);
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.ownerSVGElement?.setPointerCapture(e.pointerId);
+    setDrag({
+      kind: 'rotateSelection',
+      pointerId: e.pointerId,
+      center,
+      lastAngle: angleBetween(start, center),
       points: selectedPoints,
     });
   };
@@ -696,18 +743,71 @@ export function PathCanvas({
           {selectMode &&
             selectedGroupBounds &&
             selectedCanvasPoints.length > 0 && (
-              <rect
-                x={selectedGroupBounds.x - 10}
-                y={selectedGroupBounds.y - 10}
-                width={selectedGroupBounds.w + 20}
-                height={selectedGroupBounds.h + 20}
+              <g>
+                {rotateHandle && (
+                  <line
+                    x1={selectedGroupBounds.x + selectedGroupBounds.w / 2}
+                    y1={selectedGroupBounds.y - 10}
+                    x2={rotateHandle.x}
+                    y2={rotateHandle.y}
+                    stroke="#67e8f9"
+                    strokeWidth={1.25}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
+                <rect
+                  x={selectedGroupBounds.x - 10}
+                  y={selectedGroupBounds.y - 10}
+                  width={selectedGroupBounds.w + 20}
+                  height={selectedGroupBounds.h + 20}
+                  fill="none"
+                  stroke="#67e8f9"
+                  strokeWidth={1.75}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ pointerEvents: 'none' }}
+                />
+              </g>
+            )}
+
+          {selectMode && rotateHandle && selectedCanvasPoints.length > 0 && (
+            <g
+              style={{
+                cursor: isRotatingSelection ? 'grabbing' : 'grab',
+                pointerEvents: 'all',
+              }}
+              onPointerDown={startSelectionRotate}
+            >
+              <circle
+                cx={rotateHandle.x}
+                cy={rotateHandle.y}
+                r={ROTATE_HANDLE_RADIUS}
+                fill="#ecfeff"
+                stroke="#0891b2"
+                strokeWidth={1.5}
+                vectorEffect="non-scaling-stroke"
+              />
+              <path
+                d={`M ${rotateHandle.x - 3.5} ${rotateHandle.y + 1.5} A 4.5 4.5 0 1 1 ${rotateHandle.x + 3} ${rotateHandle.y - 2.8}`}
                 fill="none"
-                stroke="#67e8f9"
-                strokeWidth={1.75}
+                stroke="#0891b2"
+                strokeWidth={1.3}
+                strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
                 style={{ pointerEvents: 'none' }}
               />
-            )}
+              <path
+                d={`M ${rotateHandle.x + 3} ${rotateHandle.y - 2.8} L ${rotateHandle.x + 3.7} ${rotateHandle.y - 6} L ${rotateHandle.x + 6.1} ${rotateHandle.y - 3.8}`}
+                fill="none"
+                stroke="#0891b2"
+                strokeWidth={1.3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+                style={{ pointerEvents: 'none' }}
+              />
+            </g>
+          )}
 
           {selectMode &&
             scaleHandles.map((handle) => (
