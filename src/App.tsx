@@ -18,7 +18,7 @@ import {
   Flag,
   ClipboardPaste,
 } from 'lucide-react';
-import { PathCanvas } from '@/components/PathCanvas';
+import { PathCanvas, type SelectedPathPoint } from '@/components/PathCanvas';
 import { ColorPicker } from '@/components/ColorPicker';
 import { SegmentEditor } from '@/components/SegmentEditor';
 import {
@@ -30,10 +30,7 @@ import {
   parsePathData,
   makeLineSegment,
   moveToSegment,
-  pathBounds,
   segmentEnd,
-  scaleSegments,
-  translateSegments,
 } from '@/lib/path';
 
 const DEFAULT_CANVAS = { w: 1000, h: 700 };
@@ -48,7 +45,7 @@ function App() {
   });
   const [shapes, setShapes] = useState<PathShape[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedPathIds, setSelectedPathIds] = useState<string[]>([]);
+  const [selectedPoints, setSelectedPoints] = useState<SelectedPathPoint[]>([]);
   const [expanded, setExpanded] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
   const [pathDataInput, setPathDataInput] = useState('');
@@ -75,10 +72,10 @@ function App() {
   const activeSegmentCount = active?.segments.length ?? 0;
   const activePathData = active ? buildD(active.segments) : '';
 
-  const selectPaths = (ids: string[]) => {
-    setSelectedPathIds(ids);
-    if (ids.length > 0) {
-      setActiveId(ids[ids.length - 1]);
+  const selectPoints = (points: SelectedPathPoint[]) => {
+    setSelectedPoints(points);
+    if (points.length > 0) {
+      setActiveId(points[points.length - 1].shapeId);
       setExpanded(true);
     }
   };
@@ -143,7 +140,7 @@ function App() {
     const next = [...shapes, p];
     commit(next);
     setActiveId(p.id);
-    setSelectedPathIds([p.id]);
+    setSelectedPoints([]);
     setExpanded(true);
   };
 
@@ -158,7 +155,7 @@ function App() {
         const p = { ...createPath(`Path ${shapes.length + 1}`), segments };
         commit([...shapes, p]);
         setActiveId(p.id);
-        setSelectedPathIds([p.id]);
+        setSelectedPoints([]);
         return;
       }
 
@@ -187,7 +184,7 @@ function App() {
       const id = pendingRemove.id;
       const next = shapes.filter((s) => s.id !== id);
       commit(next);
-      setSelectedPathIds((current) => current.filter((selected) => selected !== id));
+      setSelectedPoints((current) => current.filter((point) => point.shapeId !== id));
       if (activeId === id) setActiveId(next[0]?.id ?? null);
     }
     setPendingRemove(null);
@@ -199,7 +196,7 @@ function App() {
       const next = [...shapes, np];
       commit(next);
       setActiveId(np.id);
-      setSelectedPathIds([np.id]);
+      setSelectedPoints([]);
       setExpanded(true);
       const withSeg: PathShape = {
         ...np,
@@ -231,35 +228,75 @@ function App() {
     });
   };
 
-  const scalePaths = (ids: string[], factor: number) => {
-    const selected = shapes.filter((s) => ids.includes(s.id));
-    const bounds = selected
-      .map((s) => pathBounds(s.segments))
-      .filter((b): b is { x: number; y: number; w: number; h: number } => b !== null);
-    if (bounds.length === 0) return;
-    const minX = Math.min(...bounds.map((b) => b.x));
-    const minY = Math.min(...bounds.map((b) => b.y));
-    const maxX = Math.max(...bounds.map((b) => b.x + b.w));
-    const maxY = Math.max(...bounds.map((b) => b.y + b.h));
-    const center = { x: minX + (maxX - minX) / 2, y: minY + (maxY - minY) / 2 };
+  const updatePointInSegment = (
+    segment: Segment,
+    pointIndex: number,
+    transform: (point: Point) => Point
+  ): Segment => {
+    if (pointIndex === 0) {
+      if (segment.type === 'Z') return segment;
+      const next = transform(segmentEnd(segment, []));
+      return { ...segment, x: next.x, y: next.y };
+    }
+    if ((segment.type === 'C' || segment.type === 'Q') && pointIndex === 1) {
+      const next = transform({ x: segment.x1, y: segment.y1 });
+      return { ...segment, x1: next.x, y1: next.y };
+    }
+    if (segment.type === 'C' && pointIndex === 2) {
+      const next = transform({ x: segment.x2, y: segment.y2 });
+      return { ...segment, x2: next.x, y2: next.y };
+    }
+    return segment;
+  };
+
+  const transformPoints = (
+    points: SelectedPathPoint[],
+    transform: (point: Point) => Point
+  ) => {
+    if (points.length === 0) return;
+    const selectedByShape = new Map<string, Map<number, Set<number>>>();
+    points.forEach((point) => {
+      const bySegment =
+        selectedByShape.get(point.shapeId) ?? new Map<number, Set<number>>();
+      const indexes = bySegment.get(point.segmentIndex) ?? new Set<number>();
+      indexes.add(point.pointIndex);
+      bySegment.set(point.segmentIndex, indexes);
+      selectedByShape.set(point.shapeId, bySegment);
+    });
+
     setShapes((current) =>
-      current.map((s) =>
-        ids.includes(s.id)
-          ? { ...s, segments: scaleSegments(s.segments, factor, center) }
-          : s
-      )
+      current.map((s) => {
+        const bySegment = selectedByShape.get(s.id);
+        if (!bySegment) return s;
+        return {
+          ...s,
+          segments: s.segments.map((segment, segmentIndex) => {
+            const indexes = bySegment.get(segmentIndex);
+            if (!indexes) return segment;
+            return Array.from(indexes).reduce(
+              (nextSegment, pointIndex) =>
+                updatePointInSegment(nextSegment, pointIndex, transform),
+              segment
+            );
+          }),
+        };
+      })
     );
   };
 
-  const movePaths = (ids: string[], dx: number, dy: number) => {
-    if (ids.length === 0) return;
-    setShapes((current) =>
-      current.map((s) =>
-        ids.includes(s.id)
-          ? { ...s, segments: translateSegments(s.segments, dx, dy) }
-          : s
-      )
-    );
+  const scalePoints = (
+    points: SelectedPathPoint[],
+    factor: number,
+    center: Point
+  ) => {
+    transformPoints(points, (point) => ({
+      x: center.x + (point.x - center.x) * factor,
+      y: center.y + (point.y - center.y) * factor,
+    }));
+  };
+
+  const movePoints = (points: SelectedPathPoint[], dx: number, dy: number) => {
+    transformPoints(points, (point) => ({ x: point.x + dx, y: point.y + dy }));
   };
 
   const onCommit = useCallback(() => {
@@ -300,7 +337,7 @@ function App() {
         (s) =>
           `<path d="${buildD(s.segments)}" stroke="${s.stroke}" stroke-width="${s.strokeWidth}" stroke-opacity="${s.strokeOpacity}" fill="${
             s.fillEnabled ? s.fill : 'none'
-          }" fill-opacity="${s.fillOpacity}" stroke-linecap="round" stroke-linejoin="round"/>`
+          }" fill-opacity="${s.fillOpacity}" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"/>`
       )
       .join('\n    ');
 
@@ -446,14 +483,14 @@ function App() {
               }
             }
             shapes={shapes}
-            selectedShapeIds={selectedPathIds}
+            selectedPoints={selectedPoints}
             imageSrc={imageSrc}
             canvasDims={canvasDims}
             onUpdateSegment={updateSegment}
             onAddSegment={addSegment}
-            onSelectShapes={selectPaths}
-            onScaleShapes={scalePaths}
-            onMoveShapes={movePaths}
+            onSelectPoints={selectPoints}
+            onScalePoints={scalePoints}
+            onMovePoints={movePoints}
             onCommit={onCommit}
           />
         </main>
@@ -559,7 +596,7 @@ function App() {
                         }`}
                         onClick={() => {
                           setActiveId(s.id);
-                          setSelectedPathIds([s.id]);
+                          setSelectedPoints([]);
                           setExpanded(true);
                         }}
                       >

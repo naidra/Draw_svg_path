@@ -3,24 +3,29 @@ import { Minus, MousePointer2, Plus, RotateCcw } from 'lucide-react';
 import type { PathShape, Segment, Point } from '@/lib/path';
 import {
   buildD,
-  pathBounds,
   segmentEnd,
   segmentStart,
   segmentEndPoints,
   type Segment as Seg,
 } from '@/lib/path';
 
+export type SelectedPathPoint = {
+  shapeId: string;
+  segmentIndex: number;
+  pointIndex: number;
+};
+
 interface Props {
   shape: PathShape;
   shapes: PathShape[];
-  selectedShapeIds: string[];
+  selectedPoints: SelectedPathPoint[];
   imageSrc: string | null;
   canvasDims: { w: number; h: number };
   onUpdateSegment: (index: number, seg: Segment) => void;
   onAddSegment: (p: Point) => void;
-  onSelectShapes: (ids: string[]) => void;
-  onScaleShapes: (ids: string[], factor: number) => void;
-  onMoveShapes: (ids: string[], dx: number, dy: number) => void;
+  onSelectPoints: (points: SelectedPathPoint[]) => void;
+  onScalePoints: (points: SelectedPathPoint[], factor: number, center: Point) => void;
+  onMovePoints: (points: SelectedPathPoint[], dx: number, dy: number) => void;
   onCommit: () => void;
 }
 
@@ -29,14 +34,14 @@ type Drag =
   | { kind: 'control'; segIndex: number; ctrlIndex: number }
   | { kind: 'pan'; pointerId: number; startClient: Point; startPan: Point }
   | { kind: 'marquee'; pointerId: number; start: Point; current: Point }
-  | { kind: 'moveSelection'; pointerId: number; last: Point; shapeIds: string[] }
+  | { kind: 'moveSelection'; pointerId: number; last: Point; points: SelectedPathPoint[] }
   | {
       kind: 'scaleSelection';
       pointerId: number;
       center: Point;
       lastDistance: number;
       cursor: ScaleCursor;
-      shapeIds: string[];
+      points: SelectedPathPoint[];
     }
   | null;
 
@@ -66,11 +71,11 @@ const normalizeBounds = (a: Point, b: Point): Bounds => ({
   h: Math.abs(a.y - b.y),
 });
 
-const intersects = (a: Bounds, b: Bounds) =>
-  a.x <= b.x + b.w &&
-  a.x + a.w >= b.x &&
-  a.y <= b.y + b.h &&
-  a.y + a.h >= b.y;
+const containsPoint = (bounds: Bounds, p: Point) =>
+  p.x >= bounds.x &&
+  p.x <= bounds.x + bounds.w &&
+  p.y >= bounds.y &&
+  p.y <= bounds.y + bounds.h;
 
 const unionBounds = (bounds: Bounds[]): Bounds | null => {
   if (bounds.length === 0) return null;
@@ -87,6 +92,60 @@ const boundsCenter = (bounds: Bounds): Point => ({
 });
 
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+type SelectablePoint = SelectedPathPoint & {
+  x: number;
+  y: number;
+  kind: 'endpoint' | 'control';
+};
+
+const pointKey = (point: SelectedPathPoint) =>
+  `${point.shapeId}:${point.segmentIndex}:${point.pointIndex}`;
+
+const selectablePointsForShape = (shape: PathShape): SelectablePoint[] =>
+  shape.segments.flatMap((seg, segmentIndex) => {
+    if (seg.type === 'Z') return [];
+    const points: SelectablePoint[] = [
+      {
+        shapeId: shape.id,
+        segmentIndex,
+        pointIndex: 0,
+        x: segmentEnd(seg, shape.segments).x,
+        y: segmentEnd(seg, shape.segments).y,
+        kind: 'endpoint',
+      },
+    ];
+    if (seg.type === 'C') {
+      points.push(
+        {
+          shapeId: shape.id,
+          segmentIndex,
+          pointIndex: 1,
+          x: seg.x1,
+          y: seg.y1,
+          kind: 'control',
+        },
+        {
+          shapeId: shape.id,
+          segmentIndex,
+          pointIndex: 2,
+          x: seg.x2,
+          y: seg.y2,
+          kind: 'control',
+        }
+      );
+    } else if (seg.type === 'Q') {
+      points.push({
+        shapeId: shape.id,
+        segmentIndex,
+        pointIndex: 1,
+        x: seg.x1,
+        y: seg.y1,
+        kind: 'control',
+      });
+    }
+    return points;
+  });
 
 function PanHandIcon() {
   return (
@@ -112,14 +171,14 @@ function PanHandIcon() {
 export function PathCanvas({
   shape,
   shapes,
-  selectedShapeIds,
+  selectedPoints,
   imageSrc,
   canvasDims,
   onUpdateSegment,
   onAddSegment,
-  onSelectShapes,
-  onScaleShapes,
-  onMoveShapes,
+  onSelectPoints,
+  onScalePoints,
+  onMovePoints,
   onCommit,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -176,7 +235,7 @@ export function PathCanvas({
     }
     if (drag.kind === 'moveSelection') {
       const p = toSvg(e);
-      onMoveShapes(drag.shapeIds, p.x - drag.last.x, p.y - drag.last.y);
+      onMovePoints(drag.points, p.x - drag.last.x, p.y - drag.last.y);
       setDrag({ ...drag, last: p });
       return;
     }
@@ -187,7 +246,7 @@ export function PathCanvas({
         distance(p, drag.center)
       );
       const factor = nextDistance / drag.lastDistance;
-      onScaleShapes(drag.shapeIds, factor);
+      onScalePoints(drag.points, factor, drag.center);
       setDrag({ ...drag, lastDistance: nextDistance });
       return;
     }
@@ -241,16 +300,10 @@ export function PathCanvas({
       if (drag.kind === 'marquee') {
         const marquee = normalizeBounds(drag.start, drag.current);
         const isClick = marquee.w < 3 && marquee.h < 3;
-        const ids = isClick
+        const points = isClick
           ? []
-          : shapes
-              .filter((s) => s.visible && s.segments.length > 0)
-              .filter((s) => {
-                const bounds = pathBounds(s.segments);
-                return bounds ? intersects(marquee, bounds) : false;
-              })
-              .map((s) => s.id);
-        onSelectShapes(ids);
+          : selectablePoints.filter((point) => containsPoint(marquee, point));
+        onSelectPoints(points);
       }
       setDrag(null);
       if (
@@ -296,18 +349,20 @@ export function PathCanvas({
   const inactiveShapes = shapes.filter(
     (s) => s.visible && s.id !== shape.id && s.segments.length > 0
   );
-  const selectedIdSet = new Set(selectedShapeIds);
-  const selectedShapes = shapes.filter(
-    (s) => selectedIdSet.has(s.id) && s.visible && s.segments.length > 0
+  const selectablePoints = shapes
+    .filter((s) => s.visible && s.segments.length > 0)
+    .flatMap(selectablePointsForShape);
+  const selectedPointSet = new Set(selectedPoints.map(pointKey));
+  const selectedCanvasPoints = selectablePoints.filter((point) =>
+    selectedPointSet.has(pointKey(point))
   );
-  const selectedBounds = selectedShapes
-    .map((s) => ({ id: s.id, bounds: pathBounds(s.segments) }))
-    .filter(
-      (item): item is { id: string; bounds: Bounds } => item.bounds !== null
-    );
-  const selectedGroupBounds = unionBounds(
-    selectedBounds.map((item) => item.bounds)
-  );
+  const selectedPointBounds = selectedCanvasPoints.map((point) => ({
+    x: point.x,
+    y: point.y,
+    w: 0,
+    h: 0,
+  }));
+  const selectedGroupBounds = unionBounds(selectedPointBounds);
   const scaleHandles: ScaleHandle[] = selectedGroupBounds
     ? [
         {
@@ -417,17 +472,17 @@ export function PathCanvas({
     setDrag({ kind: 'marquee', pointerId: e.pointerId, start: p, current: p });
   };
 
-  const startSelectionMove = (
+  const startPointSelectionMove = (
     e: React.PointerEvent<SVGElement>,
-    id: string
+    point: SelectedPathPoint
   ) => {
     if (!selectMode || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const shapeIds = selectedIdSet.has(id) ? selectedShapeIds : [id];
-    onSelectShapes(shapeIds);
+    const points = selectedPointSet.has(pointKey(point)) ? selectedPoints : [point];
+    onSelectPoints(points);
     e.currentTarget.ownerSVGElement?.setPointerCapture(e.pointerId);
-    setDrag({ kind: 'moveSelection', pointerId: e.pointerId, last: toSvg(e), shapeIds });
+    setDrag({ kind: 'moveSelection', pointerId: e.pointerId, last: toSvg(e), points });
   };
 
   const startSelectionScale = (
@@ -447,7 +502,7 @@ export function PathCanvas({
       center,
       lastDistance,
       cursor,
-      shapeIds: selectedShapeIds,
+      points: selectedPoints,
     });
   };
 
@@ -502,7 +557,7 @@ export function PathCanvas({
                 ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
                 : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
             }`}
-            title="Select paths"
+            title="Select points"
           >
             <MousePointer2 size={16} />
           </button>
@@ -594,17 +649,12 @@ export function PathCanvas({
               strokeOpacity={s.strokeOpacity}
               fill={s.fillEnabled ? s.fill : 'none'}
               fillOpacity={s.fillOpacity}
+              fillRule="evenodd"
               strokeLinecap="round"
               strokeLinejoin="round"
               style={{
-                pointerEvents: selectMode ? 'visiblePainted' : 'none',
-                cursor: selectMode ? 'pointer' : undefined,
+                pointerEvents: 'none',
               }}
-              onClick={(e) => {
-                if (!selectMode) return;
-                e.stopPropagation();
-              }}
-              onPointerDown={(e) => startSelectionMove(e, s.id)}
             />
           ))}
 
@@ -617,42 +667,35 @@ export function PathCanvas({
                 strokeOpacity={shape.strokeOpacity}
                 fill={shape.fillEnabled ? shape.fill : 'none'}
                 fillOpacity={shape.fillOpacity}
+                fillRule="evenodd"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 style={{
-                  pointerEvents: selectMode ? 'visiblePainted' : 'none',
-                  cursor: selectMode ? 'pointer' : undefined,
+                  pointerEvents: 'none',
                 }}
-                onClick={(e) => {
-                  if (!selectMode) return;
-                  e.stopPropagation();
-                }}
-                onPointerDown={(e) => startSelectionMove(e, shape.id)}
               />
             </>
           )}
 
           {selectMode &&
-            selectedBounds.map(({ id, bounds }) => (
-              <rect
-                key={`selected-${id}`}
-                x={bounds.x - 10}
-                y={bounds.y - 10}
-                width={bounds.w + 20}
-                height={bounds.h + 20}
-                fill="rgba(34, 211, 238, 0.08)"
+            selectedCanvasPoints.map((point) => (
+              <circle
+                key={`selected-${pointKey(point)}`}
+                cx={point.x}
+                cy={point.y}
+                r={9}
+                fill="rgba(34, 211, 238, 0.18)"
                 stroke="#22d3ee"
-                strokeWidth={1.5}
-                strokeDasharray="8 5"
+                strokeWidth={1.75}
                 vectorEffect="non-scaling-stroke"
-                style={{ cursor: 'move', pointerEvents: 'all' }}
-                onPointerDown={(e) => startSelectionMove(e, id)}
+                style={{ cursor: 'grab', pointerEvents: 'all' }}
+                onPointerDown={(e) => startPointSelectionMove(e, point)}
               />
             ))}
 
           {selectMode &&
             selectedGroupBounds &&
-            selectedBounds.length > 0 && (
+            selectedCanvasPoints.length > 0 && (
               <rect
                 x={selectedGroupBounds.x - 10}
                 y={selectedGroupBounds.y - 10}
@@ -699,6 +742,25 @@ export function PathCanvas({
               style={{ pointerEvents: 'none' }}
             />
           )}
+
+          {selectMode &&
+            selectablePoints.map((point) => {
+              const selected = selectedPointSet.has(pointKey(point));
+              return (
+                <circle
+                  key={`selectable-${pointKey(point)}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={point.kind === 'endpoint' ? 5.5 : 5}
+                  fill={point.kind === 'endpoint' ? '#22d3ee' : '#fbbf24'}
+                  stroke={selected ? '#ecfeff' : '#0f172a'}
+                  strokeWidth={selected ? 2 : 1.5}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ cursor: 'grab', pointerEvents: 'all' }}
+                  onPointerDown={(e) => startPointSelectionMove(e, point)}
+                />
+              );
+            })}
 
           {showPreview && lastStart && lastSeg && (
             <line
