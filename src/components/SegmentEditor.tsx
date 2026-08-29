@@ -117,7 +117,7 @@ export function SegmentEditor({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-slate-700 text-slate-200 text-xs font-bold">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-slate-200 text-slate-700 text-xs font-bold dark:bg-slate-700 dark:text-slate-200">
             {index + 1}
           </span>
           <span className="text-sm font-medium text-slate-200">
@@ -150,8 +150,8 @@ export function SegmentEditor({
                   onClick={() => convertTo(type)}
                   className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[10px] transition-all ${
                     active
-                      ? 'bg-blue-500/20 border-blue-500/60 text-blue-300'
-                      : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                      ? 'bg-blue-50 border-blue-500/70 text-blue-700 dark:bg-blue-500/20 dark:border-blue-500/60 dark:text-blue-300'
+                      : 'bg-slate-100 border-slate-300 text-slate-600 hover:border-slate-400 hover:text-slate-900 dark:bg-slate-800/60 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200'
                   }`}
                   title={label}
                 >

@@ -665,14 +665,14 @@ export function PathCanvas({
                   height={GRID_SIZE}
                   patternUnits="userSpaceOnUse"
                 >
-                  <rect width={GRID_SIZE} height={GRID_SIZE} fill="#1e293b" />
-                  <rect width={GRID_SIZE / 2} height={GRID_SIZE / 2} fill="#243246" />
+                  <rect width={GRID_SIZE} height={GRID_SIZE} fill="var(--canvas-grid-a)" />
+                  <rect width={GRID_SIZE / 2} height={GRID_SIZE / 2} fill="var(--canvas-grid-b)" />
                   <rect
                     x={GRID_SIZE / 2}
                     y={GRID_SIZE / 2}
                     width={GRID_SIZE / 2}
                     height={GRID_SIZE / 2}
-                    fill="#243246"
+                    fill="var(--canvas-grid-b)"
                   />
                 </pattern>
               </defs>

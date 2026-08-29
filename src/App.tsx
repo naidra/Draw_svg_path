@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   Flag,
   ClipboardPaste,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { PathCanvas, type SelectedPathPoint } from '@/components/PathCanvas';
 import { ColorPicker } from '@/components/ColorPicker';
@@ -35,8 +37,17 @@ import {
 } from '@/lib/path';
 
 const DEFAULT_CANVAS = { w: 1000, h: 700 };
+type Theme = 'light' | 'dark';
+
+const getInitialTheme = (): Theme => {
+  if (typeof window === 'undefined') return 'dark';
+  const saved = window.localStorage.getItem('svg-path-studio-theme');
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+};
 
 function App() {
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const [canvasDims, setCanvasDims] = useState<{ w: number; h: number }>(DEFAULT_CANVAS);
@@ -58,6 +69,11 @@ function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const latestSegmentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    window.localStorage.setItem('svg-path-studio-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!exportOpen) return;
@@ -445,6 +461,7 @@ function App() {
   const canUndo = !!active && active.segments.length > 0;
   const canCloseActivePath = !!lastSeg && lastSeg.type !== 'M' && lastSeg.type !== 'Z';
   const canTransformSelection = selectedPoints.length > 0 && !!selectedPointsCenter();
+  const isDark = theme === 'dark';
 
   const closeActivePath = () => {
     if (!canCloseActivePath) return;
@@ -452,14 +469,16 @@ function App() {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="themeable h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 h-14 border-b border-slate-800 bg-slate-900/80 backdrop-blur flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
             <Layers size={18} className="text-white" />
           </div>
-          <h1 className="text-base font-semibold tracking-tight">SVG Path Studio</h1>
+          <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+            SVG Path Studio
+          </h1>
         </div>
 
         <div className="h-6 w-px bg-slate-700 mx-1" />
@@ -473,7 +492,7 @@ function App() {
         />
         <button
           onClick={() => fileRef.current?.click()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-300 text-sm text-slate-700 transition-colors dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-100"
         >
           <ImagePlus size={15} />
           {imageSrc ? 'Change image' : 'Choose image'}
@@ -487,6 +506,16 @@ function App() {
           title="Undo"
         >
           <Undo2 size={16} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+          className="p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
         {shapes.length > 0 && (
@@ -684,7 +713,7 @@ function App() {
                         >
                           {s.name}
                         </span>
-                        <span className="text-[10px] text-slate-500 font-mono">
+                        <span className="text-[10px] text-slate-600 font-mono dark:text-slate-500">
                           {s.segments.length} seg
                         </span>
                         <button

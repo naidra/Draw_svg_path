@@ -1,3 +1,107 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+  }
+}
+
+@layer components {
+  :root:not(.dark) .themeable {
+    --canvas-grid-a: #e5e7eb;
+    --canvas-grid-b: #f3f4f6;
+    --canvas-empty: #f8fafc;
+  }
+
+  :root.dark .themeable {
+    --canvas-grid-a: #1e293b;
+    --canvas-grid-b: #243246;
+    --canvas-empty: #0f172a;
+  }
+
+  :root:not(.dark) .themeable .bg-slate-950,
+  :root:not(.dark) .themeable .bg-slate-950\/50,
+  :root:not(.dark) .themeable .bg-slate-950\/85 {
+    background-color: rgb(248 250 252 / var(--tw-bg-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .bg-slate-900,
+  :root:not(.dark) .themeable .bg-slate-900\/60,
+  :root:not(.dark) .themeable .bg-slate-900\/80 {
+    background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .bg-slate-800,
+  :root:not(.dark) .themeable .bg-slate-800\/30,
+  :root:not(.dark) .themeable .bg-slate-800\/40,
+  :root:not(.dark) .themeable .bg-slate-800\/60,
+  :root:not(.dark) .themeable .bg-slate-800\/80 {
+    background-color: rgb(241 245 249 / var(--tw-bg-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .border-slate-800 {
+    border-color: rgb(226 232 240 / var(--tw-border-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .border-slate-700 {
+    border-color: rgb(203 213 225 / var(--tw-border-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .border-slate-700\/60 {
+    border-color: rgb(203 213 225 / 0.9);
+  }
+
+  :root:not(.dark) .themeable .border-slate-600,
+  :root:not(.dark) .themeable .border-slate-500 {
+    border-color: rgb(148 163 184 / var(--tw-border-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .text-slate-100,
+  :root:not(.dark) .themeable .text-slate-200 {
+    color: rgb(15 23 42 / var(--tw-text-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .text-slate-300,
+  :root:not(.dark) .themeable .text-slate-400 {
+    color: rgb(71 85 105 / var(--tw-text-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .text-slate-500 {
+    color: rgb(100 116 139 / var(--tw-text-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .text-slate-600 {
+    color: rgb(148 163 184 / var(--tw-text-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .hover\:bg-slate-800:hover,
+  :root:not(.dark) .themeable .hover\:bg-slate-700:hover {
+    background-color: rgb(226 232 240 / var(--tw-bg-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .hover\:border-slate-600:hover {
+    border-color: rgb(148 163 184 / var(--tw-border-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable .hover\:text-slate-100:hover,
+  :root:not(.dark) .themeable .hover\:text-slate-200:hover,
+  :root:not(.dark) .themeable .hover\:text-slate-300:hover {
+    color: rgb(15 23 42 / var(--tw-text-opacity, 1));
+  }
+
+  :root:not(.dark) .themeable input:not([type='range']):not([type='checkbox']):not([type='color']),
+  :root:not(.dark) .themeable textarea {
+    background-color: white;
+    color: rgb(15 23 42);
+  }
+}
