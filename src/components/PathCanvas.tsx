@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
-import { Minus, MousePointer2, Plus, RotateCcw } from 'lucide-react';
+import { Minus, MousePointer2, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import type { PathShape, Segment, Point } from '@/lib/path';
 import {
   buildD,
@@ -27,6 +27,7 @@ interface Props {
   onScalePoints: (points: SelectedPathPoint[], factor: number, center: Point) => void;
   onRotatePoints: (points: SelectedPathPoint[], angle: number, center: Point) => void;
   onMovePoints: (points: SelectedPathPoint[], dx: number, dy: number) => void;
+  onDeleteSelectedPoints: () => void;
   onCommit: () => void;
 }
 
@@ -192,6 +193,7 @@ export function PathCanvas({
   onScalePoints,
   onRotatePoints,
   onMovePoints,
+  onDeleteSelectedPoints,
   onCommit,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -608,6 +610,17 @@ export function PathCanvas({
           >
             <MousePointer2 size={16} />
           </button>
+          {selectMode && selectedPoints.length > 0 && (
+            <button
+              type="button"
+              onClick={onDeleteSelectedPoints}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-red-300 transition-colors hover:bg-red-500/15 hover:text-red-200"
+              title="Delete selected points"
+              aria-label="Delete selected points"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {

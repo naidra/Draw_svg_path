@@ -34,6 +34,7 @@ import {
   makeLineSegment,
   moveToSegment,
   segmentEnd,
+  deleteSegmentPoints,
 } from '@/lib/path';
 
 const DEFAULT_CANVAS = { w: 1000, h: 700 };
@@ -301,6 +302,32 @@ function App() {
       x: minX + (maxX - minX) / 2,
       y: minY + (maxY - minY) / 2,
     };
+  };
+
+  const deleteSelectedPoints = () => {
+    if (selectedPoints.length === 0) return;
+    const selectedByShape = new Map<string, Map<number, Set<number>>>();
+    for (const point of selectedPoints) {
+      let bySegment = selectedByShape.get(point.shapeId);
+      if (!bySegment) {
+        bySegment = new Map();
+        selectedByShape.set(point.shapeId, bySegment);
+      }
+      let indexes = bySegment.get(point.segmentIndex);
+      if (!indexes) {
+        indexes = new Set();
+        bySegment.set(point.segmentIndex, indexes);
+      }
+      indexes.add(point.pointIndex);
+    }
+
+    setShapes((current) => current.map((shape) => {
+      const selected = selectedByShape.get(shape.id);
+      return selected
+        ? { ...shape, segments: deleteSegmentPoints(shape.segments, selected) }
+        : shape;
+    }));
+    setSelectedPoints([]);
   };
 
   const transformPoints = (
@@ -590,6 +617,7 @@ function App() {
             onScalePoints={scalePoints}
             onRotatePoints={rotatePoints}
             onMovePoints={movePoints}
+            onDeleteSelectedPoints={deleteSelectedPoints}
             onCommit={onCommit}
           />
         </main>

@@ -523,6 +523,50 @@ export function translateSegments(
   });
 }
 
+export function deleteSegmentPoints(
+  segments: Segment[],
+  selected: ReadonlyMap<number, ReadonlySet<number>>
+): Segment[] {
+  const next: Segment[] = [];
+  let needsMove = true;
+
+  segments.forEach((segment, index) => {
+    // Preserve subpath boundaries even when their original move point is removed.
+    if (segment.type === 'M') needsMove = true;
+    if (segment.type === 'Z') {
+      if (!needsMove) next.push(segment);
+      needsMove = true;
+      return;
+    }
+
+    const points = selected.get(index);
+    if (points?.has(0)) return;
+
+    if (needsMove) {
+      next.push({ type: 'M', x: segment.x, y: segment.y });
+      needsMove = false;
+    } else if (segment.type === 'C' && (points?.has(1) || points?.has(2))) {
+      if (points.has(1) && points.has(2)) {
+        next.push({ type: 'L', x: segment.x, y: segment.y });
+      } else {
+        next.push({
+          type: 'Q',
+          x1: points.has(1) ? segment.x2 : segment.x1,
+          y1: points.has(1) ? segment.y2 : segment.y1,
+          x: segment.x,
+          y: segment.y,
+        });
+      }
+    } else if (segment.type === 'Q' && points?.has(1)) {
+      next.push({ type: 'L', x: segment.x, y: segment.y });
+    } else {
+      next.push(segment);
+    }
+  });
+
+  return next;
+}
+
 export function newId(): string {
   return Math.random().toString(36).slice(2, 9);
 }
