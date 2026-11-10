@@ -20,10 +20,12 @@ import {
   ClipboardPaste,
   Moon,
   Sun,
+  ArrowUp,
 } from 'lucide-react';
 import { PathCanvas, type SelectedPathPoint } from '@/components/PathCanvas';
 import { ColorPicker } from '@/components/ColorPicker';
 import { SegmentEditor } from '@/components/SegmentEditor';
+import { PathAnimationSidebar } from '@/components/PathAnimationSidebar';
 import {
   type PathShape,
   type Segment,
@@ -65,11 +67,15 @@ function App() {
   const [pathDataError, setPathDataError] = useState<string | null>(null);
   const [selectionRotationInput, setSelectionRotationInput] = useState('0');
   const [pendingRemove, setPendingRemove] = useState<
-    { kind: 'segment'; index: number } | { kind: 'path'; id: string; name: string } | null
+    | { kind: 'segment'; index: number }
+    | { kind: 'path'; id: string; name: string }
+    | { kind: 'animation-path'; name: string; onConfirm: () => void }
+    | null
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const latestSegmentRef = useRef<HTMLDivElement | null>(null);
+  const rightSidebarScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -191,7 +197,9 @@ function App() {
       setPendingRemove(null);
       return;
     }
-    if (pendingRemove.kind === 'segment') {
+    if (pendingRemove.kind === 'animation-path') {
+      pendingRemove.onConfirm();
+    } else if (pendingRemove.kind === 'segment') {
       if (active) {
         const i = pendingRemove.index;
         const updated = active.segments.filter((_, idx) => idx !== i);
@@ -498,7 +506,7 @@ function App() {
   return (
     <div className="themeable h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 h-14 border-b border-slate-800 bg-slate-900/80 backdrop-blur flex-shrink-0">
+      <header className="relative z-40 flex items-center gap-3 px-4 h-14 border-b border-slate-800 bg-slate-900/80 backdrop-blur flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
             <Layers size={18} className="text-white" />
@@ -589,7 +597,10 @@ function App() {
       </header>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="relative flex-1 flex overflow-hidden">
+        <PathAnimationSidebar
+          onRequestRemove={(name, onConfirm) => setPendingRemove({ kind: 'animation-path', name, onConfirm })}
+        />
         {/* Canvas */}
         <main className="flex-1 relative bg-slate-950 overflow-hidden">
           <PathCanvas
@@ -623,8 +634,8 @@ function App() {
         </main>
 
         {/* Sidebar */}
-        <aside className="w-80 flex-shrink-0 border-l border-slate-800 bg-slate-900/60 overflow-y-auto">
-          <div className="p-4 space-y-5">
+        <aside className="w-80 flex flex-col flex-shrink-0 border-l border-slate-800 bg-slate-900/60 overflow-hidden">
+          <div ref={rightSidebarScrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 space-y-5">
             {/* Canvas dimensions */}
             <section className="space-y-3">
               <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -1057,6 +1068,20 @@ function App() {
                 </>
               )}
           </div>
+          <div className="flex flex-shrink-0 justify-end border-t border-slate-800 px-3 py-2">
+            <button
+              type="button"
+              aria-label="Scroll right sidebar to top"
+              title="Scroll to top"
+              onClick={() => rightSidebarScrollRef.current?.scrollTo({
+                top: 0,
+                behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+              })}
+              className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            >
+              <ArrowUp size={14} aria-hidden="true" />
+            </button>
+          </div>
         </aside>
       </div>
 
@@ -1070,12 +1095,12 @@ function App() {
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">
-                    {pendingRemove.kind === 'path'
+                    {pendingRemove.kind !== 'segment'
                       ? 'Remove path?'
                       : 'Remove segment?'}
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    {pendingRemove.kind === 'path'
+                    {pendingRemove.kind !== 'segment'
                       ? `This will delete "${pendingRemove.name}" and all of its segments. This action cannot be undone.`
                       : `This will delete segment #${pendingRemove.index + 1} from the current path. This action cannot be undone.`}
                   </p>
