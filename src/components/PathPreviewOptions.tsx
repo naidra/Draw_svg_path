@@ -30,6 +30,24 @@ export function PathPreviewOptions({ value, onChange }: Props) {
             <input type="color" value={value[key]} disabled={!value[key === 'fill' ? 'fillEnabled' : 'strokeEnabled']} onChange={(event) => onChange({ ...value, [key]: event.target.value })} className="h-7 w-12 cursor-pointer rounded border border-slate-700 bg-slate-800 disabled:opacity-40" />
           </label>
         ))}
+        {(['fillOpacity', 'strokeOpacity'] as const).map((key) => (
+          <label key={key} className="flex items-center justify-between gap-2">
+            <span>{key === 'fillOpacity' ? 'Fill opacity' : 'Stroke opacity'}</span>
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              value={value[key]}
+              disabled={!value[key === 'fillOpacity' ? 'fillEnabled' : 'strokeEnabled']}
+              onChange={(event) => {
+                const opacity = event.target.valueAsNumber;
+                if (Number.isFinite(opacity)) onChange({ ...value, [key]: Math.min(1, Math.max(0, opacity)) });
+              }}
+              className="w-20 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-slate-100 disabled:opacity-40"
+            />
+          </label>
+        ))}
         <label className="flex items-center justify-between gap-2">
           <span>Stroke width</span>
           <input type="number" min="0" max="100" step="0.5" value={value.strokeWidth} disabled={!value.strokeEnabled} onChange={(event) => {

@@ -6,6 +6,8 @@ export interface PathPreviewSettings {
   strokeEnabled: boolean;
   fill: string;
   stroke: string;
+  fillOpacity: number;
+  strokeOpacity: number;
   strokeWidth: number;
   duration: number;
 }
@@ -32,6 +34,8 @@ export function buildPathAnimationSvg({ paths, viewBox, settings, canMorph, id }
     d: paths[0],
     fill: settings.fillEnabled ? settings.fill : 'none',
     stroke: settings.strokeEnabled ? settings.stroke : 'none',
+    'fill-opacity': settings.fillOpacity,
+    'stroke-opacity': settings.strokeOpacity,
     'stroke-width': settings.strokeWidth,
     'stroke-linecap': 'round',
     'stroke-linejoin': 'round',

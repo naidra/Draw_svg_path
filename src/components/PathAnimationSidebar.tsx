@@ -31,6 +31,8 @@ export function PathAnimationSidebar({ onRequestRemove }: PathAnimationSidebarPr
     strokeEnabled: true,
     fill: '#3b82f6',
     stroke: '#60a5fa',
+    fillOpacity: 1,
+    strokeOpacity: 1,
     strokeWidth: 2.5,
     duration: 0.3,
   });
@@ -243,6 +245,8 @@ export function PathAnimationSidebar({ onRequestRemove }: PathAnimationSidebarPr
                     d={validFrames[0].data}
                     fill={options.fillEnabled ? options.fill : 'none'}
                     stroke={options.strokeEnabled ? options.stroke : 'none'}
+                    fillOpacity={options.fillOpacity}
+                    strokeOpacity={options.strokeOpacity}
                     strokeWidth={options.strokeWidth}
                     fillRule={options.evenoddFill ? 'evenodd' : undefined}
                     clipRule={options.evenoddClip ? 'evenodd' : undefined}
